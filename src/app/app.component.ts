@@ -1,4 +1,4 @@
-import { Component, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, ElementRef, OnChanges, OnInit, SimpleChanges, ViewChild } from '@angular/core';
 
 import { IMqttServiceOptions, MqttService, IMqttMessage } from "ngx-mqtt";
 import { Subscription } from 'rxjs';
@@ -14,99 +14,111 @@ interface Logs{
   styleUrls: ['./app.component.css']
 })
 export class AppComponent{
+  @ViewChild('terminal', { static: false }) public terminal!: ElementRef;
 
-  selection: string = ""
+  clientID: string = `client${(Math.floor(Math.random()*1000))}`;
   connected: boolean = false;
   title: string = ""
   logs: Logs[] = [{
     color: "#ff6e6e",
-    message: "disconnected"
+    message: "Disconnected"
   }];
 
   MQTT_SERVICE_OPTIONS: IMqttServiceOptions = {
     url: "wss://0070dab94b6e4df894cff18d9cd6aa81.s1.eu.hivemq.cloud:8884/mqtt",
-    clientId: "clientId-rH6Kk21Dx6",
+    clientId: this.clientID,
     username: "Salaxer",
     password: "mn!eFdYJ2gVes4k",
   }
   topic: string = "message";
   myMessage: string = "";
 
-  messageSubscription: Subscription = new Subscription();
+  SuscriptionsMessages?: Subscription;
+
 
   constructor(
     private _mqttService: MqttService,
   ) {
+    this.connectMQTT();
     this._mqttService.onConnect.subscribe(data =>{
-      this.readMessages();
-      this.selection = "Connected";
       this.connected = true;
-      this.addLog(this.selection, "#40ff40");
+      this.addLog('Connected', "#40ff40");
+      this.readMessages();
     });
     this._mqttService.onClose.subscribe(data =>{
-      this.selection = "Disconnected";
       this.connected = false;
-      this.addLog(this.selection, "#ff6e6e");
+      this.addLog('Disconnected', "#ff6e6e");
+      this.closeMessages();
     });
-  }
-
-  addLog(message: string, color: string = "white"){
-    const log: Logs = {color,message}
-    this.logs.push(log);
   }
 
   connectMQTT(message?: string){
     if (!this.connected) {
-      this.selection = message ? message : "Connecting...";
-      this.addLog(this.selection);
+      const messages = message ? message : "Connecting...";
+      this.addLog(messages);
       return this._mqttService.connect(this.MQTT_SERVICE_OPTIONS);
     }else{
-      this.selection = "already connected";
-      this.addLog(this.selection);
+      this.addLog("already connected");
     }
   }
 
   disconnectMQTT(){
     if (this.connected) {
-      this.selection = "disconnecting...";
-      this.addLog(this.selection);
+      this.addLog('disconnecting...');
       return this._mqttService.disconnect();
     }else{
-      this.selection = "already disconnected";
-      this.addLog(this.selection);
+      this.addLog('already disconnected');
     }
   }
 
   writteSomething(){
     if(!this.connected){
-      this.selection = "You cannot send message while you are disconnected"
-      this.addLog(this.selection);
+      this.addLog('You cannot send message while you are disconnected');
       this.connectMQTT('Trying to Reconnect...')
     }else{
-      this.selection = "type something here";
-      this.addLog(this.selection);
+      this.addLog('type something here');
     }
   }
 
   sendMessage(){
-    this.selection = "Sending..";
-    this.addLog(this.selection);
-    this._mqttService.publish(this.topic, this.myMessage)
+    this.addLog('Sending..');
+    this._mqttService.publish(this.topic, this.myMessage, {properties: {userProperties: { name: this.clientID}}})
     .subscribe(data =>{
-      this.myMessage = "";
-      this.selection = "Sended";
-      this.addLog(this.selection);
+      this.addLog('Sended');
     })
   }
 
   readMessages(){
-    this.messageSubscription.add(
-      this._mqttService.observe(this.topic)
-      .subscribe((data: IMqttMessage) =>{
-        const message = data.payload.toString();
-        this.addLog(`new message Received: ${message}`, "#6fc1dc");
-      })
-    )
+    this.SuscriptionsMessages = this._mqttService.observe(this.topic)
+    .subscribe((data: IMqttMessage) =>{
+      const message = data.payload.toString();
+      if(this.myMessage == message){
+        this.addLog(`me: ${message}`, "#6fc1dc");
+        this.myMessage = "";
+      }else{
+        this.addLog(`Other person ${data.topic}: ${message}`, "#d5aa14");
+      }
+    })
+  }
+
+  closeMessages(){
+    this.SuscriptionsMessages?.unsubscribe();
+  }
+
+  addLog(message: string, color: string = "white"){
+    const log: Logs = {color,message};
+    this.logs.push(log);
+    setTimeout(() => {
+      this.scrollDown();
+    }, 200);
+  }
+
+  cleanLogs(){
+    this.logs = [];
+  }
+
+  scrollDown(){
+    (this.terminal.nativeElement as HTMLElement).scrollTo(0, (this.terminal.nativeElement as HTMLElement).scrollHeight)
   }
 
 }
